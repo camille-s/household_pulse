@@ -1,0 +1,196 @@
+"0","filenames <- list.files(""data"", recursive = T, full.names=T) %>% "
+"0","  str_subset(""state/|clean_data"", negate = T) #the state folder has the already-clean files -> should be excluded from cleaning"
+"0","topics <- str_remove_all(filenames, ""((.*)wk([0-9])/)|([0-9])(.*)$"") %>% unique"
+"0","#not sure how to cut down on the too many loops situation"
+"0","walk(topics, function(topic){"
+"0","  topic_files <- str_subset(filenames, topic) "
+"0","  message(topic)"
+"0","  full_dt <- map_dfr(topic_files, function(filename){"
+"0","    sheetlist <- readxl::excel_sheets(filename)"
+"0","    subtopic_name <- rio::import(filename, col_names=F, n_max = 1, .name_repair = ""minimal"")[1,1] %>% "
+"0","    str_extract(""(?<=\\: |\\. )(.*)(?=(, by Select)|(\\: United States))"") #couldn't figure out how to use str_remove efficiently"
+"0","    message(paste(str_extract(filename, ""wk[0-9]""), subtopic_name))"
+"0","    "
+"0","    map_dfr(sheetlist, function(sheet){"
+"0","    dta <- suppressMessages(rio::import(filename, skip = 3,sheet=sheet, .name_repair = ""unique"")) %>% #can't figure out how to suppress messages nicely"
+"0","      filter_all(any_vars(!is.na(.)))"
+"0","    "
+"0","#wish i knew a good way to do this next part"
+"0","    #luckily age is always at the ""top"" of the data. all rows above it should be incorporated into the column names"
+"0","    newnames <- map(names(dta), function(x){"
+"0","      attachment <- str_replace_all(unlist(dta[1:(which.max(!is.na(pull(dta, 1)))-1), "
+"0","                                               which(names(dta) ==x)]), "
+"0","                                    ""\\s+"", ""_"") %>% "
+"0","        str_remove_all(""-"")"
+"0","      attachment <- attachment[!is.na(attachment)]"
+"0","      x <- str_remove_all(x, ""\\*|\\.{3}|-|(([0-9])$)"") %>%  #remove the name repair function"
+"0","        str_trim() %>% "
+"0","        str_replace_all(""\\s+"", ""_"") #replace spaces with underscores for tidy practices"
+"0","      if(!length(attachment)) return(x)"
+"0","      return(paste(c(x, attachment), collapse = "":""))"
+"0","    }) %>% unlist"
+"0","    dta <- dta[-(1:(which.max(!is.na(pull(dta, 1)))-1)),] %>%  #cut off the fluff"
+"0","      setNames(newnames) "
+"0","    "
+"0","    dta <- dta %>% "
+"0","      mutate(category = ifelse(is.na(!!sym(names(dta)[2])), !!sym(names(dta)[1]), NA),"
+"0","             category = zoo::na.locf(category)) %>% "
+"0","      filter(!is.na(!!sym(names(dta)[2]))) "
+"0","    #identifiers for topic"
+"0","    dta <- dta %>% select(names(dta)[1], category, everything()) %>%"
+"0","      mutate_all(as.character) %>% "
+"0","      pivot_longer(3:length(.), names_to = ""indicator"") %>% "
+"0","      rename(category_value = `Select_characteristics`) %>% "
+"0","      mutate(topic = topic, subtopic = subtopic_name, "
+"0","             area = sheet)"
+"0","      "
+"0","    })"
+"0",""
+"0",""
+"0","    "
+"0","  })"
+"0","  saveRDS(full_dt, paste0(""data/clean_data/"", topic, "".RDS""))"
+"0","  "
+"0","})"
+"2","educ
+"
+"2","wk1 Time Spent in Last Week on Home Based Education for Households with Children in School, by Select Characteristics
+"
+"2","wk1 COVID-19 Pandemic Impact on How Children Received Education
+"
+"2","wk1 Computer and Internet Availability in Households with Children in Public or Private School, by Select Characteristics
+"
+"2","wk1 Provider of Computer and Internet Services for Households with Children Enrolled in Public or Private School, by Select Characteristics
+"
+"2","wk2 Time Spent in Last Week on Home Based Education for Households with Children in School, by Select Characteristics
+"
+"2","wk2 COVID-19 Pandemic Impact on How Children Received Education, by Select Characteristics
+"
+"2","wk2 Computer and Internet Availability in Households with Children in Public or Private School, by Select Characteristics
+"
+"2","wk2 Provider of Computer and Internet Services for Households with Children Enrolled in Public or Private School, by Select Characteristics
+"
+"2","wk3 Time Spent in Last Week on Home Based Education for Households with Children in School, by Select Characteristics
+"
+"2","wk3 COVID-19 Pandemic Impact on How Children Received Education, by Select Characteristics
+"
+"2","wk3 Computer and Internet Availability in Households with Children in Public or Private School, by Select Characteristics
+"
+"2","wk3 Provider of Computer and Internet Services for Households with Children Enrolled in Public or Private School, by Select Characteristics
+"
+"2","employ
+"
+"2","wk1 Experienced and Expected Loss of Employment Income
+"
+"2","wk1 Employment Status and Sector of Employment, by Select Characteristics
+"
+"2","wk1 Educational Attainment for Adults Not Working at Time of Survey, by Main Reason for Not Working and Paycheck Status While Not Working
+"
+"2","wk2 Experienced and Expected Loss of Employment Income
+"
+"2","wk2 Employment Status and Sector of Employment, by Select Characteristics
+"
+"2","wk2 Educational Attainment for Adults Not Working at Time of Survey, by Main Reason for Not Working and Paycheck Status While Not Working
+"
+"2","wk3 Experienced and Expected Loss of Employment Income, by Select Characteristics
+"
+"2","wk3 Employment Status and Sector of Employment, by Select Characteristics
+"
+"2","wk3 Educational Attainment for Adults Not Working at Time of Survey, by Main Reason for Not Working and Paycheck Status While Not Working
+"
+"2","food
+"
+"2","wk1 Household Food Spending by Select Household Characteristics
+"
+"2","wk1 Food Sufficiency for Households, Prior to COVID-19 Pandemic, by Select Characteristics
+"
+"2","wk1 Food Sufficiency for Households, in the Last 7 Days
+"
+"2","wk1 Food Sufficiency for Households with Children, Prior to COVID-19 Pandemic, by Select Characteristics
+"
+"2","wk1 Food Sufficiency for Households with Children, in the Last 7 Days, by Select Characteristics
+"
+"2","wk1 Recent Food Insufficiency for Households, by Prior Food Insufficiency, and Additional Food Related Household Characteristics
+"
+"2","wk1 Recent Food Insufficiency for Households with Children, by Prior Food Insufficiency (and Additional Food Related Household Characteristics)
+"
+"2","wk2 Household Food Spending by Select Household Characteristics
+"
+"2","wk2 Food Sufficiency for Households, Prior to COVID-19 Pandemic, by Select Characteristics
+"
+"2","wk2 Food Sufficiency for Households, in the Last 7 Days, by Select Characteristics
+"
+"2","wk2 Food Sufficiency for Households with Children, Prior to COVID-19 Pandemic, by Select Characteristics
+"
+"2","wk2 Food Sufficiency for Households with Children, in the Last 7 Days, by Select Characteristics
+"
+"2","wk2 NA
+"
+"2","wk2 Recent Food Insufficiency for Households with Children, by Prior Food Insufficiency (and Additional Food Related Household Characteristics)
+"
+"2","wk3 Household Food Spending by Select Household Characteristics
+"
+"2","wk3 Food Sufficiency for Households, Prior to COVID-19 Pandemic, by Select Characteristics
+"
+"2","wk3 Food Sufficiency for Households, in the Last 7 Days, by Select Characteristics
+"
+"2","wk3 Food Sufficiency for Households with Children, Prior to COVID-19 Pandemic, by Select Characteristics
+"
+"2","wk3 Food Sufficiency for Households with Children, in the Last 7 Days, by Select Characteristics
+"
+"2","wk3 Recent Food Insufficiency for Households, by Prior Food Insufficiency, and Additional Food Related Household Characteristics
+"
+"2","wk3 Recent Food Insufficiency for Households with Children, by Prior Food Insufficiency (and Additional Food Related Household Characteristics)
+"
+"2","health
+"
+"2","wk1 COVID-19 Pandemic Related Problems with Access to Medical Care, in Last 4 weeks, by Select Characteristics
+"
+"2","wk1 Symptoms of Anxiety Experienced in the Last 7 days, by Select Characteristics
+"
+"2","wk1 Symptoms of Depression Experienced in the Last 7 Days, by Select Characteristics
+"
+"2","wk1 Current Health Insurance Status, by Select Characteristics
+"
+"2","wk2 COVID-19 Pandemic Related Problems with Access to Medical Care, in Last 4 weeks, by Select Characteristics
+"
+"2","wk2 Symptoms of Anxiety Experienced in the Last 7 days
+"
+"2","wk2 Symptoms of Depression Experienced in the Last 7 Days, by Select Characteristics
+"
+"2","wk2 Current Health Insurance Status
+"
+"2","wk3 COVID-19 Pandemic Related Problems with Access to Medical Care, in Last 4 weeks, by Select Characteristics
+"
+"2","wk3 Symptoms of Anxiety Experienced in the Last 7 days, by Select Characteristics
+"
+"2","wk3 Symptoms of Depression Experienced in the Last 7 Days, by Select Characteristics
+"
+"2","wk3 Current Health Insurance Status, by Select Characteristics
+"
+"2","housing
+"
+"2","wk1 Last Month's Payment Status for Owner-Occupied Housing Units, by Select Characteristics
+"
+"2","wk1 Last Month's Payment Status for Renter-Occupied Housing Units, by Select Characteristics
+"
+"2","wk1 Confidence in Ability to Make Next Month's Payment for Owner-Occupied Housing Units, by Select Characteristics
+"
+"2","wk1 Confidence in Ability to Make Next Month's Payment for Renter-Occupied Housing Units, by Select Characteristics
+"
+"2","wk2 Last Month's Payment Status for Owner-Occupied Housing Units, by Select Characteristics
+"
+"2","wk2 Last Month's Payment Status for Renter-Occupied Housing Units, by Select Characteristics
+"
+"2","wk2 Confidence in Ability to Make Next Month's Payment for Owner-Occupied Housing Units, by Select Characteristics
+"
+"2","wk2 Confidence in Ability to Make Next Month's Payment for Renter-Occupied Housing Units, by Select Characteristics
+"
+"2","wk3 Last Month's Payment Status for Owner-Occupied Housing Units, by Select Characteristics
+"
+"2","wk3 Last Month's Payment Status for Renter-Occupied Housing Units, by Select Characteristics
+"
+"2","wk3 Confidence in Ability to Make Next Month's Payment for Owner-Occupied Housing Units, by Select Characteristics
+"
+"2","wk3 Confidence in Ability to Make Next Month's Payment for Renter-Occupied Housing Units, by Select Characteristics
+"

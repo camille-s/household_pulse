@@ -1,0 +1,9 @@
+{
+    "path" : "~/projs/datahaven2020/household_pulse",
+    "sortOrder" : [
+        {
+            "ascending" : true,
+            "columnIndex" : 2
+        }
+    ]
+}

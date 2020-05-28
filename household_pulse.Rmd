@@ -1,0 +1,164 @@
+---
+title: "R Notebook"
+output: html_notebook
+author: "nathan"
+---
+
+this notebook scrapes and cleans the Census Bureau's recent Household Pulse survey data. At least from the two weeks' worth of data that have been released as of 5/21, all data is in an annoying format but ultimately consistent. 
+
+
+```{r setup}
+library(tidyverse)
+library(knitr)
+library(rvest)
+library(hrbrthemes)
+opts_chunk$set(echo = F)
+knitr::opts_knit$set(root.dir = here::here()) 
+```
+
+
+```{r scrape}
+base_link <- "https://www2.census.gov/programs-surveys/demo/tables/hhp/2020/"
+dirname <- "data"
+
+weeklinks <- read_html(base_link) %>% 
+  html_nodes("td a") %>% html_attr("href") %>% str_subset("programs", T)
+walk(weeklinks, function(link){
+  dir.create(paste0(dirname, link), F)
+  page <- read_html(paste0(base_link, 
+                           link)) %>% 
+    html_nodes("td a") %>% html_attr("href") %>% str_subset("programs", T) 
+  map(page, function(i){ #loop inside loop not ideal but brain too small to think of alternative
+    download.file(paste0(base_link,
+                           link, i),
+                  paste0(dirname, link, i),
+                  quiet = T, 
+                  mode = "wb") #needed for windows i think
+    message(paste("Downloaded", paste0(link, i), "into", 
+                  paste0(dirname, link,i)))
+  })
+})
+```
+
+CS 5/25: K-12 doesn't actually use total adults as denominator, it uses adults living with kids enrolled in school, but doesn't include that in the data. So I'm calculating for the states based on the percentage given, then using that for US number.
+
+```{r state_interactivetool}
+#this script works with data from the Census' limited interactive tool, found at https://www.census.gov/data-tools/demo/hhp/#/table
+#the table descriptions are vague and the denominators are questionable (as camille points out) but the data is at least in a tidy form to begin with
+delayed_med <- read_csv( "data/state/delayed_med.csv" ) %>%
+  mutate(denom = `Total Delayed Medical Care` / (`Delayed Medical Care Percent` / 100))
+food_scarce <- read_csv( "data/state/food_scarcity.csv" ) %>%
+  mutate(denom = `Total Food Scarcity` / (`Food Scarcity Percent` / 100))
+loss <- read_csv( "data/state/income_loss.csv" ) %>%
+  mutate(denom = `Total Loss in Employment Income` / (`Loss in Employment Income Percent` / 100))
+expect_loss <- read_csv( "data/state/expect_loss.csv" ) %>%
+  mutate(denom = `Total Expected Loss in Employment Income` / (`Expected Loss in Employment Income Percent` / 100))
+house <- read_csv( "data/state/housing_insecure.csv" ) %>%
+  mutate(denom = `Total Housing Insecurity` / (`Housing Insecurity Percent` / 100))
+k12 <- read_csv( "data/state/k12_change.csv" ) %>%
+  mutate(denom = `Total K-12 Educational Changes` / (`K-12 Educational Changes Percent` / 100))
+
+#with only two points for time, not really sure what viz to make... will set something up that could be useful for when there are more data
+
+plot_hhp <- function(d, varname, denom = denom) {
+  raw_var <- paste("Total", varname)
+  y <- paste(varname, "Percent")
+  #attaching US-wide estimates
+  d <- d %>% group_by(Week) %>% 
+    summarise(!!y:=  100*sum(!!sym(raw_var))/sum({{ denom }})) %>% 
+    mutate(State = "United States") %>% 
+    bind_rows(d)
+  hhp_plot <- ggplot(d, aes(y = !!sym(y),x = Week, color = State)) +
+    geom_line(size = 1.5) +
+    gghighlight::gghighlight(State %in% c("Connecticut", "United States"),
+                             use_group_by = F,
+                             unhighlighted_params = list(size = .5),
+                             use_direct_label = F) +
+    theme_ipsum_rc() + 
+    labs(title = paste0("Trends in ", varname), 
+         subtitle = paste0("Weeks 1-", max(d$Week), " of the U.S. Household Pulse Survey")
+         )
+
+  ggsave(paste0("notebooks/hhp_plots/", varname, ".png"), 
+         hhp_plot, 
+         width =11, height = 7, dpi = 400)
+  hhp_plot
+}
+
+#returns a ggplot object so can be modified flexibly
+plot_hhp(delayed_med, varname = "Delayed Medical Care")
+plot_hhp(food_scarce, varname = "Food Scarcity")
+plot_hhp(loss, varname = "Loss in Employment Income")
+plot_hhp(expect_loss, varname = "Expected Loss in Employment Income")
+plot_hhp(house, varname = "Housing Insecurity")
+plot_hhp(k12, varname = "K-12 Educational Changes")
+
+
+```
+
+"data" has a separate Excel notebook for each topic for each week, where each sheet in a given file represents a single state. They are not organized in a tidy manner by any means, but they're at least consistent enough to tediously work through in a single code chunk
+
+```{r clean_bystate}
+filenames <- list.files("data", recursive = T, full.names=T) %>% 
+  str_subset("state/|clean_data", negate = T) #the state folder has the already-clean files -> should be excluded from cleaning
+topics <- str_remove_all(filenames, "((.*)wk([0-9])/)|([0-9])(.*)$") %>% unique
+#not sure how to cut down on the too many loops situation
+walk(topics, function(topic){
+  topic_files <- str_subset(filenames, topic) 
+  message(topic)
+  full_dt <- map_dfr(topic_files, function(filename){
+    sheetlist <- readxl::excel_sheets(filename)
+    subtopic_name <- rio::import(filename, col_names=F, n_max = 1, .name_repair = "minimal")[1,1] %>% 
+    str_extract("(?<=\\: |\\. )(.*)(?=(, by Select)|(\\: United States))") #couldn't figure out how to use str_remove efficiently
+    message(paste(str_extract(filename, "wk[0-9]"), subtopic_name))
+    
+    map_dfr(sheetlist, function(sheet){
+    dta <- suppressMessages(rio::import(filename, skip = 3,sheet=sheet, .name_repair = "unique")) %>% #can't figure out how to suppress messages nicely
+      filter_all(any_vars(!is.na(.)))
+    
+#wish i knew a good way to do this next part
+    #luckily age is always at the "top" of the data. all rows above it should be incorporated into the column names
+    newnames <- map(names(dta), function(x){
+      attachment <- str_replace_all(unlist(dta[1:(which.max(!is.na(pull(dta, 1)))-1), 
+                                               which(names(dta) ==x)]), 
+                                    "\\s+", "_") %>% 
+        str_remove_all("-")
+      attachment <- attachment[!is.na(attachment)]
+      x <- str_remove_all(x, "\\*|\\.{3}|-|(([0-9])$)") %>%  #remove the name repair function
+        str_trim() %>% 
+        str_replace_all("\\s+", "_") #replace spaces with underscores for tidy practices
+      if(!length(attachment)) return(x)
+      return(paste(c(x, attachment), collapse = ":"))
+    }) %>% unlist
+    dta <- dta[-(1:(which.max(!is.na(pull(dta, 1)))-1)),] %>%  #cut off the fluff
+      setNames(newnames) 
+    
+    dta <- dta %>% 
+      mutate(category = ifelse(is.na(!!sym(names(dta)[2])), !!sym(names(dta)[1]), NA),
+             category = zoo::na.locf(category)) %>% 
+      filter(!is.na(!!sym(names(dta)[2]))) 
+    #identifiers for topic
+    dta <- dta %>% select(names(dta)[1], category, everything()) %>%
+      mutate_all(as.character) %>% 
+      pivot_longer(3:length(.), names_to = "indicator") %>% 
+      rename(category_value = `Select_characteristics`) %>% 
+      mutate(topic = topic, subtopic = subtopic_name, 
+             area = sheet)
+      
+    })
+
+
+    
+  })
+  saveRDS(full_dt, paste0("data/clean_data/", topic, ".RDS"))
+  
+})
+
+```
+
+
+
+```{r}
+
+
+```

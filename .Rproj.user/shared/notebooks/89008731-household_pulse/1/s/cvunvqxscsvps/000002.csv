@@ -1,0 +1,49 @@
+"1","Parsed with column specification:
+cols(
+  Week = [32mcol_double()[39m,
+  State = [31mcol_character()[39m,
+  `Total Individual Population age 18+` = [32mcol_double()[39m,
+  `Total Delayed Medical Care` = [32mcol_double()[39m,
+  `Delayed Medical Care Percent` = [32mcol_double()[39m
+)
+Parsed with column specification:
+cols(
+  Week = [32mcol_double()[39m,
+  State = [31mcol_character()[39m,
+  `Total Individual Population age 18+` = [32mcol_double()[39m,
+  `Total Food Scarcity` = [32mcol_double()[39m,
+  `Food Scarcity Percent` = [32mcol_double()[39m
+)
+Parsed with column specification:
+cols(
+  Week = [32mcol_double()[39m,
+  State = [31mcol_character()[39m,
+  `Total Individual Population age 18+` = [32mcol_double()[39m,
+  `Total Loss in Employment Income` = [32mcol_double()[39m,
+  `Loss in Employment Income Percent` = [32mcol_double()[39m
+)
+Parsed with column specification:
+cols(
+  Week = [32mcol_double()[39m,
+  State = [31mcol_character()[39m,
+  `Total Individual Population age 18+` = [32mcol_double()[39m,
+  `Total Expected Loss in Employment Income` = [32mcol_double()[39m,
+  `Expected Loss in Employment Income Percent` = [32mcol_double()[39m
+)
+Parsed with column specification:
+cols(
+  Week = [32mcol_double()[39m,
+  State = [31mcol_character()[39m,
+  `Total Individual Population age 18+` = [32mcol_double()[39m,
+  `Total Housing Insecurity` = [32mcol_double()[39m,
+  `Housing Insecurity Percent` = [32mcol_double()[39m
+)
+Parsed with column specification:
+cols(
+  Week = [32mcol_double()[39m,
+  State = [31mcol_character()[39m,
+  `Total Individual Population age 18+` = [32mcol_double()[39m,
+  `Total K-12 Educational Changes` = [32mcol_double()[39m,
+  `K-12 Educational Changes Percent` = [32mcol_double()[39m
+)
+"
