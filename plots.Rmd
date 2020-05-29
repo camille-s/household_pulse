@@ -1,0 +1,126 @@
+---
+title: "plots"
+output: html_notebook
+---
+
+
+```{r setup} 
+library(tidyverse)
+library(ggthemes)
+library(hrbrthemes)
+```
+
+
+
+```{r, eval = F}
+
+employ <- readRDS("data/clean_data/employ.RDS") %>%
+  filter(str_detect(indicator, "Experienced_loss"),
+         category == "Hispanic origin and Race",
+         area %in% c("MA","RI","NH","CT", "US")) %>% 
+  mutate(indicator = str_extract(indicator, "(?<=\\:)(.*)")) %>% 
+  select(-topic, -subtopic, -category) %>% 
+  pivot_wider(names_from = indicator, values_from = value) %>% 
+  mutate_at(vars(Yes, No), as.numeric) %>% 
+  mutate(pct_unemployed = No / (No+Yes), race = str_sub(category_value, 1,1))
+  
+
+employ %>% 
+  ggplot(aes(x = race, y = pct_unemployed, fill = area)) + 
+  geom_bar(stat = "identity", position = position_dodge())
+
+```
+
+
+
+
+```{r}
+employ <- readRDS("data/clean_data/employ.RDS") %>%
+  filter(str_detect(indicator, "Experienced_loss"),
+         category == "Household income", 
+         area %in% c("CT", "US", "MA","RI","NH")) %>% 
+  mutate(indicator = str_extract(indicator, "(?<=\\:)(.*)")) %>% 
+  select(-topic, -subtopic, -category) %>% 
+  pivot_wider(names_from = indicator, values_from = value) %>% 
+  mutate_at(vars(Yes, No), as.numeric) %>% 
+  mutate(pct_loss = Yes / (No+Yes))
+  
+#Greater Boston Statistical Area
+greaterboston <- employ %>% 
+  mutate(area = ifelse(area %in% c("MA","RI","NH","CT"), "Greater Boston", area)) %>% 
+  filter(area == "Greater Boston") %>% 
+  group_by(area, week, category_value) %>% 
+  summarise(pct_loss = sum(Yes)/(sum(Yes)+sum(No)))
+
+employ <- bind_rows(filter(employ, area %in% c("CT","US")), greaterboston)
+employ$category_value <- factor(str_wrap(employ$category_value, 15), levels = unique(str_wrap(employ$category_value, 15)))
+
+employ_plot <- employ %>% filter(week == 3) %>% 
+  ggplot(aes(x = category_value, y = 100*pct_loss, fill = area)) + 
+  geom_bar(stat = "identity", position = position_dodge()) + 
+  labs(y = "Percentage of Households Experiencing Loss in Income", 
+       fill = "Area", 
+       x = "Household Income", 
+       title = "Lower-income households are more likely to experience a loss in income during the pandemic", 
+       subtitle = "From week 3 of the U.S. Household Pulse Survey") + 
+  theme_ipsum_rc(axis_title_size = 14) 
+
+ggsave("plots/employ_draft.png", dpi = 600, width = 12, height= 7, unit = "in") 
+```
+
+
+```{r}
+
+food <- readRDS("data/clean_data/food.RDS") %>% 
+  filter(category == "Hispanic origin and Race", week == 3,
+         str_detect(subtopic, "Households,"), #all households, not just households with children
+         area %in% c("CT", "US", "MA","RI","NH")) %>% 
+  select(indicator, subtopic, value, race= category_value, area) %>% 
+  mutate(indicator = str_remove(indicator, (".*:"))) 
+
+food <- pivot_wider(food, names_from= indicator, values_from= value) %>% 
+  mutate_at(vars(`Enough_of_the_types_of_food_wanted`, `Total`), as.numeric) 
+
+
+greaterboston <- food %>% 
+  mutate(area = ifelse(area %in% c("MA","RI","NH","CT"), "Greater Boston", area)) %>% 
+  filter(area == "Greater Boston") %>% 
+  group_by(area, race, subtopic) %>% 
+  summarise(foodscarcity =100*(1-(sum(Enough_of_the_types_of_food_wanted)/(sum(Total))))) 
+
+food <- food %>% filter(area %in% c("US","CT")) %>% 
+  mutate(foodscarcity =100*( 1-(`Enough_of_the_types_of_food_wanted`/`Total`))) %>% 
+  bind_rows(greaterboston) %>% 
+  select(subtopic, race,area,foodscarcity) %>%
+  pivot_wider(names_from = subtopic, values_from= foodscarcity) %>% 
+  mutate(change = `Food Sufficiency for Households, in the Last 7 Days` - 
+           `Food Sufficiency for Households, Prior to COVID-19 Pandemic`)
+
+
+#last 7 days
+food$race <- fct_relevel(str_wrap(food$race, 15), "White alone,\nnot Hispanic") 
+food_plot <- ggplot(food, aes(x = race, fill = area, y = `Food Sufficiency for Households, in the Last 7 Days`)) + 
+  geom_bar(stat = "identity", position = position_dodge()) + 
+  labs(y = "Percentage Experiencing Food Scarcity in the Last 7 Days", 
+       fill = "Area", 
+       x = "Race", 
+       title = "Food scarcity (come up with better title)",
+       subtitle = "From week 3 of the U.S. Household Pulse Survey") + 
+  theme_ipsum_rc(axis_title_size = 14) + 
+  theme(axis.title = element_text(size = 24))
+
+ggsave("plots/food_draft.png", food_plot, dpi = 600, width = 12, height= 7, unit = "in") 
+
+
+food_plot <- ggplot(food, aes(x = race, fill = area, y = change)) + 
+  geom_bar(stat = "identity", position = position_dodge()) + 
+  labs(y = "Percentage Increase in Households Experiencing Food Scarcity", 
+       fill = "Area", 
+       x = "Race", 
+       title = "More households experience food scarcity during the pandemic",
+       subtitle = "From week 3 of the U.S. Household Pulse Survey") + 
+  theme_ipsum_rc(axis_title_size = 14) + 
+  theme(axis.title = element_text(size = 24))
+ggsave("plots/foodchnage_draft.png", food_plot, dpi = 600, width = 12, height= 7, unit = "in") 
+
+```

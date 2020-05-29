@@ -19,7 +19,7 @@ knitr::opts_knit$set(root.dir = here::here())
 
 ```{r scrape}
 base_link <- "https://www2.census.gov/programs-surveys/demo/tables/hhp/2020/"
-dirname <- "data"
+dirname <- "data/"
 
 weeklinks <- read_html(base_link) %>% 
   html_nodes("td a") %>% html_attr("href") %>% str_subset("programs", T)
@@ -96,7 +96,9 @@ plot_hhp(k12, varname = "K-12 Educational Changes")
 
 ```
 
-"data" has a separate Excel notebook for each topic for each week, where each sheet in a given file represents a single state. They are not organized in a tidy manner by any means, but they're at least consistent enough to tediously work through in a single code chunk
+"data" has a separate Excel notebook for each topic for each week, where each sheet in a given file represents a single state. They are not organized in a tidy manner by any means, but they're at least consistent enough to tediously work through in a single code chunk.
+
+Note that because every Excel workbook has ~56 sheets and there are over twenty files for each week, and read_excel() can't process all sheets in parallel, this script takes a long time to run. But users should look in the "data/clean_data" folder if they just want the processed output. 
 
 ```{r clean_bystate}
 filenames <- list.files("data", recursive = T, full.names=T) %>% 
@@ -109,9 +111,10 @@ walk(topics, function(topic){
   full_dt <- map_dfr(topic_files, function(filename){
     sheetlist <- readxl::excel_sheets(filename)
     subtopic_name <- rio::import(filename, col_names=F, n_max = 1, .name_repair = "minimal")[1,1] %>% 
-    str_extract("(?<=\\: |\\. )(.*)(?=(, by Select)|(\\: United States))") #couldn't figure out how to use str_remove efficiently
+      str_extract("(?<=\\: |\\. )(.*)") %>%  #couldn't figure out how to use str_remove efficiently
+      str_remove_all("(\\:(.*)$)|(\\, by Select(.*)$)")
     message(paste(str_extract(filename, "wk[0-9]"), subtopic_name))
-    
+    #each state in different sheet
     map_dfr(sheetlist, function(sheet){
     dta <- suppressMessages(rio::import(filename, skip = 3,sheet=sheet, .name_repair = "unique")) %>% #can't figure out how to suppress messages nicely
       filter_all(any_vars(!is.na(.)))
@@ -137,18 +140,18 @@ walk(topics, function(topic){
       mutate(category = ifelse(is.na(!!sym(names(dta)[2])), !!sym(names(dta)[1]), NA),
              category = zoo::na.locf(category)) %>% 
       filter(!is.na(!!sym(names(dta)[2]))) 
-    #identifiers for topic
+    #identifiers for topic+subtopic, week
     dta <- dta %>% select(names(dta)[1], category, everything()) %>%
       mutate_all(as.character) %>% 
       pivot_longer(3:length(.), names_to = "indicator") %>% 
       rename(category_value = `Select_characteristics`) %>% 
       mutate(topic = topic, subtopic = subtopic_name, 
+             week = str_extract(filename,  "(?<=wk)([0-9])*"),
              area = sheet)
       
     })
 
 
-    
   })
   saveRDS(full_dt, paste0("data/clean_data/", topic, ".RDS"))
   
@@ -157,8 +160,3 @@ walk(topics, function(topic){
 ```
 
 
-
-```{r}
-
-
-```
