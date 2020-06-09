@@ -5,36 +5,70 @@ output: html_notebook
 
 
 ```{r setup} 
+library(vroom)
 library(tidyverse)
 library(ggthemes)
 library(hrbrthemes)
+library(RColorBrewer)
+```
+
+```{r}
+wk <- 4 #adjust manually to get data for the corresponding weeks
+logo <- grid::rasterGrob(png::readPNG("plots/25th_logo_alpha.png"), interpolate = T)
+
+
+
+
 ```
 
 
 
-```{r, eval = F}
+```{r experienced_income_loss, eval = F }
 
-employ <- readRDS("data/clean_data/employ.RDS") %>%
+loss <- readRDS("data/clean_data/employ.RDS") %>%
   filter(str_detect(indicator, "Experienced_loss"),
          category == "Hispanic origin and Race",
-         area %in% c("MA","RI","NH","CT", "US")) %>% 
+         str_detect(category_value, "White|Black|Latino|Asian"),
+         area %in% c("CT", "US", "New.York_Metro_Area"), week == wk) %>% 
   mutate(indicator = str_extract(indicator, "(?<=\\:)(.*)")) %>% 
   select(-topic, -subtopic, -category) %>% 
   pivot_wider(names_from = indicator, values_from = value) %>% 
   mutate_at(vars(Yes, No), as.numeric) %>% 
-  mutate(pct_unemployed = No / (No+Yes), race = str_sub(category_value, 1,1))
-  
+  mutate(exp_loss =round( 100*Yes / (No+Yes), 1), 
+         area = ifelse(area == "New.York_Metro_Area", "Greater NYC", area),
+         loss_label = paste0(exp_loss,"%")
+         ) %>% 
+  arrange(desc(area), desc(exp_loss)) %>% 
+  mutate(race = str_wrap(category_value, 15),
+         race = factor(race, unique(race)))
+t <- grid::roundrectGrob()
 
-employ %>% 
-  ggplot(aes(x = race, y = pct_unemployed, fill = area)) + 
-  geom_bar(stat = "identity", position = position_dodge())
+loss_plot <- loss %>% 
+  ggplot(aes(x = race, y = exp_loss, fill = area, label = loss_label)) + 
+  geom_bar(stat = "identity", position = position_dodge())  + 
+  geom_text(aes(y = exp_loss+2), position= position_dodge(width = .9)) + 
+  annotation_custom(logo, xmin = 4.0, xmax = 4.8, ymin = -13, ymax = -19) + 
+  labs(y = "Percentage of Households Experiencing Loss in Income", 
+       fill = "Area", 
+       x = "Race", 
+       title = "Nonwhite Households are More Likely to Experience a Loss in Income During COVID-19", 
+       subtitle = paste("From Week", wk, "of the U.S. Household Pulse Survey.")) + 
+  theme_ipsum_rc(axis_title_size = 16, axis_text_size = 12, 
+                 axis_title_just = "lt", axis_title_face = "plain") +
+  coord_cartesian(clip = "off") + 
+  theme(plot.margin = unit(c(1, 1, 3, 1), "lines")) + 
+  scale_fill_brewer(palette = "Dark2")
+#having an annoyingly tough time picking a not-obnoxious color palette
+#  scale_fill_manual(values =  c("#4682B4", "#B4464B", "#B4AF46"))
+ggsave(paste0("plots/week", wk, "/incomeloss.png"),loss_plot, dpi = 600, width = 12, height= 7, unit = "in") 
 
 ```
 
 
 
 
-```{r}
+```{r, eval = F}
+#not finished with this
 employ <- readRDS("data/clean_data/employ.RDS") %>%
   filter(str_detect(indicator, "Experienced_loss"),
          category == "Household income", 
@@ -63,7 +97,8 @@ employ_plot <- employ %>% filter(week == 3) %>%
        x = "Household Income", 
        title = "Lower-income households are more likely to experience a loss in income during the pandemic", 
        subtitle = "From week 3 of the U.S. Household Pulse Survey") + 
-  theme_ipsum_rc(axis_title_size = 14) 
+  theme_ipsum_rc(axis_title_size = 14) + 
+  scale_fill_brewer(palette = "Paired")
 
 ggsave("plots/employ_draft.png", dpi = 600, width = 12, height= 7, unit = "in") 
 ```
@@ -72,55 +107,336 @@ ggsave("plots/employ_draft.png", dpi = 600, width = 12, height= 7, unit = "in")
 ```{r}
 
 food <- readRDS("data/clean_data/food.RDS") %>% 
-  filter(category == "Hispanic origin and Race", week == 3,
-         str_detect(subtopic, "Households,"), #all households, not just households with children
-         area %in% c("CT", "US", "MA","RI","NH")) %>% 
-  select(indicator, subtopic, value, race= category_value, area) %>% 
+  filter(category == "Hispanic origin and Race", week == wk, 
+         area %in% c("CT", "US", "New.York_Metro_Area"),
+         subtopic == "Food Sufficiency for Households, in the Last 7 Days") %>% 
+  select(indicator, subtopic, week, value, race= category_value, area) %>% 
   mutate(indicator = str_remove(indicator, (".*:"))) 
 
 food <- pivot_wider(food, names_from= indicator, values_from= value) %>% 
-  mutate_at(vars(`Enough_of_the_types_of_food_wanted`, `Total`), as.numeric) 
+  mutate_at(vars(`Enough_of_the_types_of_food_wanted`, `Often_not_enough_to_eat`,
+                 `Sometimes_not_enough_to_eat`,
+                 `Total`), as.numeric) 
 
-
-greaterboston <- food %>% 
-  mutate(area = ifelse(area %in% c("MA","RI","NH","CT"), "Greater Boston", area)) %>% 
-  filter(area == "Greater Boston") %>% 
-  group_by(area, race, subtopic) %>% 
-  summarise(foodscarcity =100*(1-(sum(Enough_of_the_types_of_food_wanted)/(sum(Total))))) 
-
-food <- food %>% filter(area %in% c("US","CT")) %>% 
-  mutate(foodscarcity =100*( 1-(`Enough_of_the_types_of_food_wanted`/`Total`))) %>% 
-  bind_rows(greaterboston) %>% 
-  select(subtopic, race,area,foodscarcity) %>%
-  pivot_wider(names_from = subtopic, values_from= foodscarcity) %>% 
-  mutate(change = `Food Sufficiency for Households, in the Last 7 Days` - 
-           `Food Sufficiency for Households, Prior to COVID-19 Pandemic`)
+food <- food %>% 
+  filter(!is.na(Often_not_enough_to_eat)) %>% 
+  mutate(foodscarcity =100*(`Sometimes_not_enough_to_eat` + `Often_not_enough_to_eat`)/`Total`) %>%
+  select( race,area,week,foodscarcity) %>% 
+  mutate(race = str_wrap(race, 15), area = ifelse(area == "New.York_Metro_Area", "Greater NYC", area)) %>% 
+  arrange(desc(area), foodscarcity) %>% filter(!str_detect(race, "Asian|Two")) %>% 
+  mutate(race = factor(race, levels = unique(race)))
 
 
 #last 7 days
-food$race <- fct_relevel(str_wrap(food$race, 15), "White alone,\nnot Hispanic") 
-food_plot <- ggplot(food, aes(x = race, fill = area, y = `Food Sufficiency for Households, in the Last 7 Days`)) + 
-  geom_bar(stat = "identity", position = position_dodge()) + 
-  labs(y = "Percentage Experiencing Food Scarcity in the Last 7 Days", 
+food_plot <- ggplot(food, aes(x = race, fill = area, y = foodscarcity,
+                              label = paste0(round(foodscarcity,1), "%"))) + 
+  geom_bar(stat = "identity", position = position_dodge(), width = .6) + 
+  geom_text(aes(y = foodscarcity+.5), position= position_dodge(width = .6)) + 
+  annotation_custom(logo, xmin = 3.1, xmax = 3.7, ymin = -4.5, ymax = -6.5) + 
+  labs(y = "Percentage Reporting 'Sometimes' Or \n'Often' Not Enough to Eat", 
        fill = "Area", 
        x = "Race", 
-       title = "Food scarcity (come up with better title)",
-       subtitle = "From week 3 of the U.S. Household Pulse Survey") + 
-  theme_ipsum_rc(axis_title_size = 14) + 
-  theme(axis.title = element_text(size = 24))
+       title = "Food insecurity during pandemic high among CT Black and Hispanic Residents",
+       subtitle = paste("From Week", wk, "of the U.S. Household Pulse Survey.")) + 
+  theme_ipsum_rc(axis_title_size = 18, axis_text_size = 14, 
+                 plot_title_size  = 20,
+                 axis_title_just = "lt", axis_title_face = "plain") +
+  coord_cartesian(clip = "off") + 
+  theme(plot.margin = unit(c(1, 1, 3, 1), "lines")) + 
+  scale_fill_brewer(palette = "Dark2")
 
-ggsave("plots/food_draft.png", food_plot, dpi = 600, width = 12, height= 7, unit = "in") 
+ggsave(paste0("plots/week", wk, "/food.png"), food_plot, dpi = 600, width = 12, height= 7, unit = "in") 
+
+```
 
 
-food_plot <- ggplot(food, aes(x = race, fill = area, y = change)) + 
+
+
+```{r}
+
+hous <- readRDS("data/clean_data/housing.RDS") %>% 
+  filter(category == "Hispanic origin and Race", week == 3,
+         str_detect(subtopic, "Renter"), #renter-occupied, not owner-occupied
+         str_detect(subtopic, "Confidence"), #for the confidence in ability to make payment question 
+         area %in% c("CT", "US", "New.York_Metro_Area")) %>% 
+  select(indicator, value, race= category_value, area) 
+
+hous <- hous %>% 
+  mutate(value = as.numeric(value), indicator = str_remove(indicator, ".*:")) %>% 
+   pivot_wider(names_from= indicator, values_from= value) 
+
+hous <- hous %>% 
+  filter(str_detect(race, "White|Black|Asian|Latino")) %>% 
+  mutate(insecure = 100*(No_confidence+Slight_confidence)/Total,
+         race = str_wrap(race, 15)) %>% 
+  select(race,area,insecure, insecure) %>% 
+  arrange(desc(area), insecure) %>% 
+  mutate(race = factor(race, levels = unique(race)),
+         area = ifelse(area == "New.York_Metro_Area", "Greater NYC", area))
+
+hous_plot <- ggplot(hous, aes(x = race, fill = area, y = insecure, 
+                              label = paste0(round(insecure,1), "%"))) + 
+    geom_bar(stat = "identity", position = position_dodge()) + 
+    geom_text(aes(y = insecure+1), position= position_dodge(width = .9)) + 
+    annotation_custom(logo, xmin = 4.1, xmax = 4.7, ymin = -10, ymax = -15) + 
+    labs(y = "% Reporting 'Slight' or 'No' Confidence \n to Pay Next Months' Rent", 
+         fill = "Area", 
+         x = "Race", 
+         title = "Difficulty to pay rent during COVID-19",
+         subtitle =  paste("From Week", wk, "of the U.S. Household Pulse Survey.")) + 
+    theme_ipsum_rc(axis_title_size = 18, axis_text_size = 12, 
+                   axis_title_just = "lt", axis_title_face = "plain") +
+    coord_cartesian(clip = "off") + 
+    theme(plot.margin = unit(c(1, 1, 3, 1), "lines")) + 
+    scale_fill_brewer(palette = "Dark2")
+
+
+ggsave(paste0("plots/week", wk, "/rent.png"), hous_plot, dpi = 600, width = 12, height= 7, unit = "in") 
+
+
+```
+
+
+# working with the HHP microdata
+
+```{r micro_import}
+micro <- vroom("data/microdata/pulse2020_puf_01.csv") %>% 
+  bind_rows(vroom("data/microdata/pulse2020_puf_02.csv"), 
+            vroom("data/microdata/pulse2020_puf_03.csv")) %>% 
+  mutate(RRACE = ifelse(RHISPANIC == 2, 5, RRACE),
+         RRACE = case_when(RRACE ==1~ "Non-Hispanic White", 
+                           RRACE == 2~ "Non-Hispanic Black", 
+                           RRACE == 3 ~ "Non-Hispanic Asian", 
+                           RRACE == 4 ~ "Other Race or Two or More Races, Non-Hispanic", 
+                           RRACE == 5 ~ "Hispanic, Any Race"))  %>% 
+  select(EST_ST,WEEK,EST_MSA, PWEIGHT, RRACE, CURFOODSUF,TENURE, MORTCONF, 
+         income_loss = WRKLOSS, working = ANYWORK) 
+#doesn't seem to be a standard way to aggregate these, so have to do it for each topic
+```
+
+
+```{r micro_housing}
+#is there a better way to get the US vs CT stats? 
+
+hous_us <- micro %>% group_by(RRACE) %>% 
+  filter(TENURE ==3) %>% 
+  summarise(noconf =100* weighted.mean(MORTCONF %in% 1:2, PWEIGHT), 
+            n = n()
+            )  %>% mutate(area = "US", n = paste0("n=", n))
+hous_ct <- micro %>% filter(EST_ST == "09") %>% 
+  group_by(RRACE) %>% 
+  filter(TENURE ==3) %>% 
+  summarise(noconf =100* weighted.mean(MORTCONF %in% 1:2, PWEIGHT), 
+            n = n()
+            ) %>% mutate(area = "CT", n = paste0("n=", n))
+
+hous_nyc <- micro %>% filter(EST_MSA == "35620") %>% 
+  group_by(RRACE) %>% 
+  filter(TENURE ==3) %>% 
+  summarise(noconf =100* weighted.mean(MORTCONF %in% 1:2, PWEIGHT), 
+            n = n()
+            ) %>% mutate(area = "Greater NYC", n = paste0("n=", n)) %>% 
+  arrange(noconf) 
+
+hous <- bind_rows(hous_us, hous_ct, hous_nyc) %>% 
+  filter(str_detect(RRACE, "White|Asian|(Hispanic,)|Black")) %>% 
+  arrange(area, noconf) %>% 
+  mutate(race = str_wrap(RRACE, 15), 
+         race = factor(race, levels = unique(race)))
+
+hous_plot <- hous %>% ggplot(aes(x = race, y = noconf, fill = area)) + 
+	    geom_bar(stat = "identity", position = position_dodge()) + 
+	    geom_text(aes(label = paste0(round(noconf, 1), "%"),
+	                  y = noconf + 1), 
+	              position = position_dodge(width = .9), size = 3.5) + 
+	    annotation_custom(logo, xmin = 4.3, xmax = 4.8, ymin = -6, ymax = -10) +
+	    labs(title= "Rent burdens high during COVID-19 pandemic",
+	         subtitle = "Data from Weeks 1 to 3 of the US Household Pulse Survey", 
+	         y = "Percentage of Renters Reporting \n 'No' or 'Slight' Confidence for Next Month's Rent", 
+	         x = "Race", fill = "Area") + 
+	    theme_ipsum_rc(axis_title_size = 18, axis_text_size = 12, 
+	                   axis_title_just = "lt", axis_title_face = "plain") +
+	    coord_cartesian(clip = "off") + 
+	    theme(plot.margin = unit(c(1, 1, 3, 1), "lines")) + 
+	    scale_fill_brewer(palette = "Dark2")
+
+ggsave("plots/housing.png", hous_plot, dpi = 600, width = 12, height= 7, unit = "in") 
+```
+
+
+
+
+```{r micro_loss}
+
+loss_us <- micro %>% group_by(RRACE) %>% 
+  summarise(loss =100* weighted.mean(income_loss == 1, PWEIGHT), 
+            n = n()
+            )   %>% mutate(area = "US", n = paste0("n=", n))
+
+loss_ct <- micro %>% filter(EST_ST == "09") %>% 
+  group_by(RRACE) %>% 
+  summarise(loss =100* weighted.mean(income_loss == 1, PWEIGHT), 
+            n = n()
+            ) %>% mutate(area = "CT", n = paste0("n=", n))
+
+loss_nyc <- micro %>% filter(EST_MSA == "35620") %>% 
+  group_by(RRACE) %>% 
+  summarise(loss =100* weighted.mean(income_loss == 1, PWEIGHT), 
+            n = n()
+            ) %>% mutate(area = "Greater NYC", n = paste0("n=", n)) 
+
+loss <- bind_rows(loss_us, loss_ct, loss_nyc) %>% 
+  filter(str_detect(RRACE, "White|Asian|(Hispanic,)|Black")) %>% 
+  arrange(desc(area), loss) %>% 
+  mutate(race = str_wrap(RRACE, 15), 
+         race = factor(race, levels = unique(race)))
+
+loss_plot <- loss %>% ggplot(aes(x = race, y = loss, fill = area)) + 
+	    geom_bar(stat = "identity", position = position_dodge()) + 
+	    geom_text(aes(label = paste0(round(loss, 1), "%"),
+	                  y = loss + 1.2), 
+	              position = position_dodge(width = .9), size = 3.5) + 
+	    annotation_custom(logo, xmin = 4.1, xmax = 4.8, ymin = -9, ymax = -15) +
+	    labs(title= "Pandemic-related income loss (change title)",
+	         subtitle = "Data from Weeks 1 to 3 of the US Household Pulse Survey", 
+	         y = "Percentage of Households \n Reporting Income Loss", 
+	         x = "Race", fill = "Area") + 
+	    theme_ipsum_rc(axis_title_size = 18, axis_text_size = 12, 
+	                   axis_title_just = "lt", axis_title_face = "plain") +
+	    coord_cartesian(clip = "off") + 
+	    theme(plot.margin = unit(c(1, 1, 3, 1), "lines")) + 
+	    scale_fill_brewer(palette = "Dark2")
+
+ggsave("plots/loss_race.png", loss_plot, dpi = 600, width = 12, height= 7, unit = "in") 
+```
+
+
+
+
+```{r micro_food}
+#is there a better way to get the US vs CT stats? 
+
+food_us <- micro %>% group_by(RRACE) %>% 
+  summarise(food =100* weighted.mean(CURFOODSUF %in% 3:4, PWEIGHT), 
+            n = n()
+            )  %>% mutate(area = "US", n = paste0("n=", n))
+food_ct <- micro %>% filter(EST_ST == "09") %>% 
+  group_by(RRACE) %>% 
+  summarise(food =100* weighted.mean(CURFOODSUF %in% 3:4, PWEIGHT), 
+            n = n()
+            ) %>% mutate(area = "CT", n = paste0("n=", n))
+
+food_nyc <- micro %>% filter(EST_MSA == "35620") %>% 
+  group_by(RRACE) %>% 
+  summarise(food =100* weighted.mean(CURFOODSUF %in% 3:4, PWEIGHT), 
+            n = n()
+            ) %>% mutate(area = "Greater NYC", n = paste0("n=", n)) 
+
+food <- bind_rows(food_us, food_ct, food_nyc) %>% 
+  filter(str_detect(RRACE, "White|Asian|(Hispanic,)|Black")) %>% 
+  mutate(race = str_wrap(RRACE,15)) %>% 
+  arrange(desc(area), food) %>% 
+  mutate(race = factor(race, levels = unique(race)))
+
+food_plot <- food %>% ggplot(aes(x = race, y = food, fill = area)) + 
+	    geom_bar(stat = "identity", position = position_dodge()) + 
+	    geom_text(aes(label = paste0(round(food, 1), "%"),
+	                  y = food + .5), 
+	              position = position_dodge(width = .9), size = 3.5) + 
+	    annotation_custom(logo, xmin = 4.1, xmax = 4.6, ymin = -3, ymax = -5) +
+	    labs(title= "Food insecurity during pandemic high among CT Black and Hispanic Residents",
+	         subtitle = "Data from Weeks 1 to 3 of the US Household Pulse Survey", 
+	         y = "Percentage of Households Reporting \n 'Sometimes' or 'Often' Not Enough to Eat", 
+	         x = "Race", fill = "Area") + 
+	    theme_ipsum_rc(axis_title_size = 18, axis_text_size = 12, 
+	                   axis_title_just = "lt", axis_title_face = "plain") +
+	    coord_cartesian(clip = "off") + 
+	    theme(plot.margin = unit(c(1, 1, 3, 1), "lines")) + 
+	    scale_fill_brewer(palette = "Dark2")
+
+ggsave("plots/food.png", food_plot, dpi = 600, width = 12, height= 7, unit = "in") 
+```
+
+
+
+
+
+
+
+
+```{r}
+#unemployed
+job <- micro %>% group_by(RRACE) %>% 
+  filter(working > 0 ) %>% 
+  summarise(unemp =100* weighted.mean(working == 2, PWEIGHT), 
+            n = n()
+            )  %>% mutate(area = "US")
+job <- micro %>% filter(EST_ST == "09") %>% 
+  filter(working > 0 ) %>% 
+  group_by(RRACE) %>% 
+  summarise(unemp =100* weighted.mean(working == 2, PWEIGHT), 
+            n = n()
+            ) %>% mutate(area = "CT") %>% 
+  arrange(unemp) %>% 
+  bind_rows(job) %>% 
+  arrange(desc(area), unemp) %>% 
+  mutate(race = str_wrap(RRACE, 15), 
+         race = factor(race, unique(race)),
+         n = paste0("n = ", n))
+unemp_plot <- job %>% ggplot(aes(x = race, y = unemp, fill = area)) + 
   geom_bar(stat = "identity", position = position_dodge()) + 
-  labs(y = "Percentage Increase in Households Experiencing Food Scarcity", 
-       fill = "Area", 
-       x = "Race", 
-       title = "More households experience food scarcity during the pandemic",
-       subtitle = "From week 3 of the U.S. Household Pulse Survey") + 
-  theme_ipsum_rc(axis_title_size = 14) + 
-  theme(axis.title = element_text(size = 24))
-ggsave("plots/foodchnage_draft.png", food_plot, dpi = 600, width = 12, height= 7, unit = "in") 
+  geom_text(aes(label = n, y = unemp + 2), position = position_dodge(width = .9)) + 
+  labs(title= "Unemployment",
+       subtitle = "Data from Weeks 1 and 2 of the U.S. Household Pulse Survey", 
+       y = "Percentage of Households Experiencing \n Unemployment in the Last 7 Days", 
+       x = "Race") + 
+  theme_ipsum_rc(axis_title_size = 14) 
+ggsave("plots/unemp_race.png", unemp_plot, dpi = 600, width = 12, height= 7, unit = "in") 
 
+
+
+
+
+
+
+unemp_us <- micro %>% group_by(RRACE) %>% 
+  summarise(unemp =100* weighted.mean(working == 2, PWEIGHT), 
+            n = n()
+            )   %>% mutate(area = "US", n = paste0("n=", n))
+
+unemp_ct <- micro %>% filter(EST_ST == "09") %>% 
+  group_by(RRACE) %>% 
+  summarise(unemp =100* weighted.mean(working == 2, PWEIGHT), 
+            n = n()
+            ) %>% mutate(area = "CT", n = paste0("n=", n))
+
+unemp_nyc <- micro %>% filter(EST_MSA == "35620") %>% 
+  group_by(RRACE) %>% 
+  summarise(unemp =100* weighted.mean(working == 2, PWEIGHT), 
+            n = n()
+            ) %>% mutate(area = "Greater NYC", n = paste0("n=", n)) 
+
+unemp <- bind_rows(unemp_us, unemp_ct, unemp_nyc) %>% 
+  filter(str_detect(RRACE, "White|(Hispanic,)|Black")) %>% 
+  arrange(desc(area), unemp) %>% 
+  mutate(race = str_wrap(RRACE, 15), 
+         race = factor(race, levels = unique(race)))
+
+unemp_plot <- unemp %>% ggplot(aes(x = race, y = unemp, fill = area)) + 
+	    geom_bar(stat = "identity", position = position_dodge()) + 
+	    geom_text(aes(label = paste0(round(unemp, 1), "%"),
+	                  y = unemp + 1.2), 
+	              position = position_dodge(width = .9), size = 3.5) + 
+	    annotation_custom(logo, xmin = 4.1, xmax = 4.8, ymin = -9, ymax = -15) +
+	    labs(title= "Pandemic-related job loss (change title)",
+	         subtitle = "Data from Weeks 1 to 3 of the US Household Pulse Survey", 
+	         y = "Percentage of Households \n Reporting Income Loss", 
+	         x = "Race", fill = "Area") + 
+	    theme_ipsum_rc(axis_title_size = 18, axis_text_size = 12, 
+	                   axis_title_just = "lt", axis_title_face = "plain") +
+	    coord_cartesian(clip = "off") + 
+	    theme(plot.margin = unit(c(1, 1, 3, 1), "lines")) + 
+	    scale_fill_brewer(palette = "Dark2")
+
+ggsave("plots/loss_race.png", loss_plot, dpi = 600, width = 12, height= 7, unit = "in") 
 ```

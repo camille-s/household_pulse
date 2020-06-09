@@ -102,8 +102,19 @@ Note that because every Excel workbook has ~56 sheets and there are over twenty 
 
 ```{r clean_bystate}
 filenames <- list.files("data", recursive = T, full.names=T) %>% 
-  str_subset("state/|clean_data", negate = T) #the state folder has the already-clean files -> should be excluded from cleaning
+  str_subset("state/|clean_data|microdata", negate = T) #the state folder has the already-clean files -> should be excluded from cleaning
 topics <- str_remove_all(filenames, "((.*)wk([0-9])/)|([0-9])(.*)$") %>% unique
+
+get_attachment <- function(i,dta){
+      attachment <- str_replace_all(unlist(dta[1:(which.max(!is.na(pull(dta, 1)))-1), 
+                                               i]), 
+                                    "\\s+", "_") %>% 
+        str_remove_all("-")
+      if(isTRUE(str_detect(attachment, "tandard_error"))){ attachment <- paste0(get_attachment(i-1,dta),":standard_error")
+      }
+      attachment[!is.na(attachment)]
+}
+
 #not sure how to cut down on the too many loops situation
 walk(topics, function(topic){
   topic_files <- str_subset(filenames, topic) 
@@ -118,15 +129,12 @@ walk(topics, function(topic){
     map_dfr(sheetlist, function(sheet){
     dta <- suppressMessages(rio::import(filename, skip = 3,sheet=sheet, .name_repair = "unique")) %>% #can't figure out how to suppress messages nicely
       filter_all(any_vars(!is.na(.)))
-    
+    #message(sheet)
 #wish i knew a good way to do this next part
     #luckily age is always at the "top" of the data. all rows above it should be incorporated into the column names
-    newnames <- map(names(dta), function(x){
-      attachment <- str_replace_all(unlist(dta[1:(which.max(!is.na(pull(dta, 1)))-1), 
-                                               which(names(dta) ==x)]), 
-                                    "\\s+", "_") %>% 
-        str_remove_all("-")
-      attachment <- attachment[!is.na(attachment)]
+    newnames <- map(1:length(names(dta)), function(i){
+      attachment <- get_attachment(i,dta)
+      x <- names(dta)[i]
       x <- str_remove_all(x, "\\*|\\.{3}|-|(([0-9])$)") %>%  #remove the name repair function
         str_trim() %>% 
         str_replace_all("\\s+", "_") #replace spaces with underscores for tidy practices
@@ -137,8 +145,9 @@ walk(topics, function(topic){
       setNames(newnames) 
     
     dta <- dta %>% 
-      mutate(category = ifelse(is.na(!!sym(names(dta)[2])), !!sym(names(dta)[1]), NA),
-             category = zoo::na.locf(category)) %>% 
+      mutate(category = ifelse(is.na(pull(.,2)) | (Select_characteristics == "Total"),
+                               dta$Select_characteristics, NA),
+             category = zoo::na.locf(category, na.rm=F)) %>% 
       filter(!is.na(!!sym(names(dta)[2]))) 
     #identifiers for topic+subtopic, week
     dta <- dta %>% select(names(dta)[1], category, everything()) %>%
