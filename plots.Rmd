@@ -200,9 +200,10 @@ ggsave(paste0("plots/week", wk, "/rent.png"), hous_plot, dpi = 600, width = 12, 
 # working with the HHP microdata
 
 ```{r micro_import}
-micro <- vroom("data/microdata/pulse2020_puf_01.csv") %>% 
-  bind_rows(vroom("data/microdata/pulse2020_puf_02.csv"), 
-            vroom("data/microdata/pulse2020_puf_03.csv")) %>% 
+filenames <- list.files("data/microdata", full.names=T)
+week <- str_extract(filenames, "(?<=week_)[0-9]") %>% 
+  as.numeric() %>% max()
+micro <- map_dfr(filenames,readRDS) %>% 
   mutate(RRACE = ifelse(RHISPANIC == 2, 5, RRACE),
          RRACE = case_when(RRACE ==1~ "Non-Hispanic White", 
                            RRACE == 2~ "Non-Hispanic Black", 
@@ -240,7 +241,7 @@ hous_nyc <- micro %>% filter(EST_MSA == "35620") %>%
 
 hous <- bind_rows(hous_us, hous_ct, hous_nyc) %>% 
   filter(str_detect(RRACE, "White|Asian|(Hispanic,)|Black")) %>% 
-  arrange(area, noconf) %>% 
+  arrange(desc(area), noconf) %>% 
   mutate(race = str_wrap(RRACE, 15), 
          race = factor(race, levels = unique(race)))
 
@@ -251,7 +252,7 @@ hous_plot <- hous %>% ggplot(aes(x = race, y = noconf, fill = area)) +
 	              position = position_dodge(width = .9), size = 3.5) + 
 	    annotation_custom(logo, xmin = 4.3, xmax = 4.8, ymin = -6, ymax = -10) +
 	    labs(title= "Rent burdens high during COVID-19 pandemic",
-	         subtitle = "Data from Weeks 1 to 3 of the US Household Pulse Survey", 
+	         subtitle = paste0("Data from Weeks 1 to ", week, " of the US Household Pulse Survey"), 
 	         y = "Percentage of Renters Reporting \n 'No' or 'Slight' Confidence for Next Month's Rent", 
 	         x = "Race", fill = "Area") + 
 	    theme_ipsum_rc(axis_title_size = 18, axis_text_size = 12, 
@@ -298,7 +299,7 @@ loss_plot <- loss %>% ggplot(aes(x = race, y = loss, fill = area)) +
 	              position = position_dodge(width = .9), size = 3.5) + 
 	    annotation_custom(logo, xmin = 4.1, xmax = 4.8, ymin = -9, ymax = -15) +
 	    labs(title= "Pandemic-related income loss (change title)",
-	         subtitle = "Data from Weeks 1 to 3 of the US Household Pulse Survey", 
+	         subtitle = "Data from Weeks 1 to ", week, " of the US Household Pulse Survey", 
 	         y = "Percentage of Households \n Reporting Income Loss", 
 	         x = "Race", fill = "Area") + 
 	    theme_ipsum_rc(axis_title_size = 18, axis_text_size = 12, 
@@ -345,7 +346,7 @@ food_plot <- food %>% ggplot(aes(x = race, y = food, fill = area)) +
 	              position = position_dodge(width = .9), size = 3.5) + 
 	    annotation_custom(logo, xmin = 4.1, xmax = 4.6, ymin = -3, ymax = -5) +
 	    labs(title= "Food insecurity during pandemic high among CT Black and Hispanic Residents",
-	         subtitle = "Data from Weeks 1 to 3 of the US Household Pulse Survey", 
+	         subtitle = paste0("Data from Weeks 1 to ", week, " of the US Household Pulse Survey"), 
 	         y = "Percentage of Households Reporting \n 'Sometimes' or 'Often' Not Enough to Eat", 
 	         x = "Race", fill = "Area") + 
 	    theme_ipsum_rc(axis_title_size = 18, axis_text_size = 12, 

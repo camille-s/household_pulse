@@ -20,10 +20,5 @@ walk(links, function(puf_url){
   read_csv(unz(temp, filename)) %>% 
     saveRDS(paste0("data/microdata/week_", week, ".RDS"))
   unlink(temp)
-}) %>% 
-  saveRDS("data/microdata.RDS")
+}) 
 
-walk(list.files("data/microdata/", full.names=T, pattern = "pulse2020_puf"), 
-        function(filename){
-          read_csv(filename) 
-        }) 
